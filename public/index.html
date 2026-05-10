@@ -1,0 +1,484 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8"/>
+  <meta name="viewport" content="width=device-width, initial-scale=1.0"/>
+  <title>LoanInNeed — Application Viewer</title>
+  <meta name="description" content="Internal loan application data viewer with real-time fetch, filters, sorting and detailed profiles."/>
+  <link rel="preconnect" href="https://fonts.googleapis.com"/>
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700;800;900&display=swap" rel="stylesheet"/>
+  <link rel="stylesheet" href="style.css"/>
+</head>
+<body>
+
+<!-- ═══════════════════ SIDEBAR ═══════════════════ -->
+<aside class="sidebar" id="sidebar">
+  <div class="sidebar-logo">
+    <div class="logo-mark">
+      <svg width="22" height="22" viewBox="0 0 28 28" fill="none">
+        <rect width="28" height="28" rx="8" fill="url(#lg)"/>
+        <path d="M7 19l4-9 4 5.5 3-3.5 3 7" stroke="#fff" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/>
+        <defs>
+          <linearGradient id="lg" x1="0" y1="0" x2="28" y2="28">
+            <stop offset="0%" stop-color="#14b8a6"/>
+            <stop offset="100%" stop-color="#6366f1"/>
+          </linearGradient>
+        </defs>
+      </svg>
+    </div>
+    <div class="logo-text">
+      <span class="logo-name">LoanInNeed</span>
+      <span class="logo-sub">Admin Portal</span>
+    </div>
+  </div>
+
+  <nav class="sidebar-nav">
+    <div class="nav-section-label">Applications</div>
+    <a class="nav-item active" href="#" onclick="showView('applications')">
+      <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="3" y="3" width="18" height="18" rx="2"/><path d="M3 9h18M9 21V9"/></svg>
+      All Applications
+    </a>
+    <a class="nav-item" href="#" onclick="showView('stats')">
+      <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="22 12 18 12 15 21 9 3 6 12 2 12"/></svg>
+      Analytics
+    </a>
+    <a class="nav-item" href="#" onclick="showView('los-jobs')">
+      <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="22 12 18 12 15 21 9 3 6 12 2 12"/></svg>
+      LOS Integration
+    </a>
+  </nav>
+
+  <div class="sidebar-footer">
+    <div class="server-status" id="server-status">
+      <span class="status-dot" id="status-dot"></span>
+      <span id="status-text">Checking…</span>
+    </div>
+  </div>
+</aside>
+
+<!-- ═══════════════════ MAIN ═══════════════════ -->
+<div class="main-wrap">
+
+  <!-- Top Bar -->
+  <header class="topbar">
+    <div class="topbar-left">
+      <button class="menu-btn" onclick="toggleSidebar()" aria-label="Toggle sidebar">
+        <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><line x1="3" y1="6" x2="21" y2="6"/><line x1="3" y1="12" x2="21" y2="12"/><line x1="3" y1="18" x2="21" y2="18"/></svg>
+      </button>
+      <div class="page-title-wrap">
+        <h1 class="page-title" id="page-title">All Applications</h1>
+        <span class="page-sub" id="page-sub">Fetch loan applications by date range</span>
+      </div>
+    </div>
+    <div class="topbar-right">
+      <span id="record-badge" class="record-badge hidden"></span>
+      <button id="export-btn" class="btn-ghost hidden" onclick="exportCSV()">
+        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 15v4a2 2 0 01-2 2H5a2 2 0 01-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/></svg>
+        Export CSV
+      </button>
+      <button id="view-json-btn" class="btn-ghost hidden" onclick="switchTab('json')">
+        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="16 18 22 12 16 6"/><polyline points="8 6 2 12 8 18"/></svg>
+        View JSON
+      </button>
+    </div>
+  </header>
+
+  <!-- ─── APPLICATIONS VIEW ─── -->
+  <div id="view-applications" class="view-content">
+
+    <!-- Filter Card -->
+    <div class="filter-card">
+      <div class="filter-row">
+        <div class="field">
+          <label>From Date</label>
+          <input type="datetime-local" id="from-date"/>
+        </div>
+        <div class="field">
+          <label>To Date</label>
+          <input type="datetime-local" id="to-date"/>
+        </div>
+        <div class="field field-btn">
+          <label>&nbsp;</label>
+          <button class="btn-primary" id="fetch-btn" onclick="fetchLoans()">
+            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><polyline points="1 4 1 10 7 10"/><path d="M3.51 15a9 9 0 102.13-9.36L1 10"/></svg>
+            Fetch Applications
+          </button>
+        </div>
+      </div>
+      <div class="presets">
+        <span>Quick:</span>
+        <button onclick="setPreset(7)">7 days</button>
+        <button onclick="setPreset(30)">30 days</button>
+        <button onclick="setPreset(90)">90 days</button>
+        <button onclick="setPreset(365)">1 year</button>
+        <button onclick="setPreset(9999)">All time</button>
+      </div>
+
+      <!-- API Config Info Panel -->
+      <div class="api-config-toggle" onclick="toggleApiConfig()">
+        <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="10"/><line x1="12" y1="8" x2="12" y2="12"/><line x1="12" y1="16" x2="12.01" y2="16"/></svg>
+        API Configuration
+        <svg id="api-config-chevron" width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" style="margin-left:auto;transition:transform .2s;transform:rotate(180deg)"><polyline points="6 9 12 15 18 9"/></svg>
+      </div>
+      <div id="api-config-panel" class="api-config-panel">
+        <div class="api-config-grid">
+          <div class="api-field">
+            <label class="api-field-label">
+              <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 16V8a2 2 0 00-1-1.73l-7-4a2 2 0 00-2 0l-7 4A2 2 0 003 8v8a2 2 0 001 1.73l7 4a2 2 0 002 0l7-4A2 2 0 0021 16z"/></svg>
+              Endpoint URL
+            </label>
+            <div class="api-field-wrap">
+              <input type="text" id="cfg-endpoint" class="api-input" value="https://lionfish-app-mg3te.ondigitalocean.app/api/loans/export" readonly/>
+              <button class="api-copy-btn" onclick="copyField('cfg-endpoint', this)" title="Copy">
+                <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="9" y="9" width="13" height="13" rx="2"/><path d="M5 15H4a2 2 0 01-2-2V4a2 2 0 012-2h9a2 2 0 012 2v1"/></svg>
+              </button>
+            </div>
+          </div>
+          <div class="api-field">
+            <label class="api-field-label">
+              <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="3" y="11" width="18" height="11" rx="2"/><path d="M7 11V7a5 5 0 0110 0v4"/></svg>
+              Authorization Header
+            </label>
+            <div class="api-field-wrap">
+              <input type="text" id="cfg-auth-header" class="api-input mono" value="Authorization: Key paromita$432" readonly/>
+              <button class="api-copy-btn" onclick="copyField('cfg-auth-header', this)" title="Copy">
+                <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="9" y="9" width="13" height="13" rx="2"/><path d="M5 15H4a2 2 0 01-2-2V4a2 2 0 012-2h9a2 2 0 012 2v1"/></svg>
+              </button>
+            </div>
+          </div>
+          <div class="api-field">
+            <label class="api-field-label">
+              <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M10 13a5 5 0 007.54.54l3-3a5 5 0 00-7.07-7.07l-1.72 1.71"/><path d="M14 11a5 5 0 00-7.54-.54l-3 3a5 5 0 007.07 7.07l1.71-1.71"/></svg>
+              Auth Key (raw value)
+            </label>
+            <div class="api-field-wrap">
+              <input type="text" id="cfg-auth-key" class="api-input mono" value="paromita$432" readonly/>
+              <button class="api-copy-btn" onclick="copyField('cfg-auth-key', this)" title="Copy">
+                <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="9" y="9" width="13" height="13" rx="2"/><path d="M5 15H4a2 2 0 01-2-2V4a2 2 0 012-2h9a2 2 0 012 2v1"/></svg>
+              </button>
+            </div>
+          </div>
+          <div class="api-field">
+            <label class="api-field-label">
+              <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="16 18 22 12 16 6"/><polyline points="8 6 2 12 8 18"/></svg>
+              Query Parameters
+            </label>
+            <div class="api-field-wrap">
+              <input type="text" id="cfg-query-params" class="api-input mono" value="from=&lt;ISO8601&gt;&amp;to=&lt;ISO8601&gt;" readonly/>
+              <button class="api-copy-btn" onclick="copyField('cfg-query-params', this)" title="Copy">
+                <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="9" y="9" width="13" height="13" rx="2"/><path d="M5 15H4a2 2 0 01-2-2V4a2 2 0 012-2h9a2 2 0 012 2v1"/></svg>
+              </button>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <!-- Alert Bar -->
+    <div id="alert-bar" class="alert-bar hidden">
+      <span id="alert-icon"></span>
+      <span id="alert-msg"></span>
+    </div>
+
+    <!-- Stats Row (shown after fetch) -->
+    <div id="stats-row" class="stats-row hidden">
+      <div class="stat-card">
+        <div class="stat-icon icon-total"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M14 2H6a2 2 0 00-2 2v16a2 2 0 002 2h12a2 2 0 002-2V8z"/><polyline points="14 2 14 8 20 8"/></svg></div>
+        <div class="stat-body"><span class="stat-num" id="s-total">0</span><span class="stat-label">Total</span></div>
+      </div>
+      <div class="stat-card">
+        <div class="stat-icon icon-pending"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="10"/><polyline points="12 6 12 12 16 14"/></svg></div>
+        <div class="stat-body"><span class="stat-num" id="s-pending">0</span><span class="stat-label">Pending</span></div>
+      </div>
+      <div class="stat-card">
+        <div class="stat-icon icon-approved"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="20 6 9 17 4 12"/></svg></div>
+        <div class="stat-body"><span class="stat-num" id="s-approved">0</span><span class="stat-label">Approved</span></div>
+      </div>
+      <div class="stat-card">
+        <div class="stat-icon icon-rejected"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg></div>
+        <div class="stat-body"><span class="stat-num" id="s-rejected">0</span><span class="stat-label">Rejected</span></div>
+      </div>
+      <div class="stat-card">
+        <div class="stat-icon icon-amount"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><line x1="12" y1="1" x2="12" y2="23"/><path d="M17 5H9.5a3.5 3.5 0 000 7h5a3.5 3.5 0 010 7H6"/></svg></div>
+        <div class="stat-body"><span class="stat-num" id="s-amount">₹0</span><span class="stat-label">Total Loan Value</span></div>
+      </div>
+    </div>
+
+    <!-- Tab Switcher -->
+    <div id="tab-bar" class="tab-bar hidden">
+      <button class="tab-btn active" id="tab-table" onclick="switchTab('table')">
+        <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="3" y="3" width="18" height="18" rx="2"/><path d="M3 9h18M9 21V9"/></svg>
+        Table
+      </button>
+      <button class="tab-btn" id="tab-json" onclick="switchTab('json')">
+        <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="16 18 22 12 16 6"/><polyline points="8 6 2 12 8 18"/></svg>
+        JSON
+      </button>
+    </div>
+
+    <!-- Table Controls (only shown in Table tab) -->
+    <div id="table-controls" class="table-controls hidden">
+      <div class="search-box">
+        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="11" cy="11" r="8"/><line x1="21" y1="21" x2="16.65" y2="16.65"/></svg>
+        <input type="text" id="search-inp" placeholder="Search name, mobile, email, PAN, state…" oninput="doFilter()"/>
+        <button class="clear-search hidden" id="clear-search-btn" onclick="clearSearch()">✕</button>
+      </div>
+      <div class="status-chips" id="status-chips">
+        <button class="chip chip-all active" data-s="ALL" onclick="setStatusFilter(this)">All</button>
+        <button class="chip chip-pending" data-s="PENDING" onclick="setStatusFilter(this)">Pending</button>
+        <button class="chip chip-approved" data-s="APPROVED" onclick="setStatusFilter(this)">Approved</button>
+        <button class="chip chip-rejected" data-s="REJECTED" onclick="setStatusFilter(this)">Rejected</button>
+        <button class="chip chip-hold" data-s="HOLD" onclick="setStatusFilter(this)">Hold</button>
+        <button class="chip chip-inprogress" data-s="IN_PROGRESS" onclick="setStatusFilter(this)">In Progress</button>
+        <button class="chip chip-completed" data-s="COMPLETED" onclick="setStatusFilter(this)">Completed</button>
+        <button class="chip chip-closed" data-s="CLOSED" onclick="setStatusFilter(this)">Closed</button>
+      </div>
+      <div class="table-meta">
+        <span id="showing-label"></span>
+        <select id="per-page" onchange="currentPage=1;renderTable()">
+          <option value="10">10 / page</option>
+          <option value="25" selected>25 / page</option>
+          <option value="50">50 / page</option>
+        </select>
+      </div>
+    </div>
+
+    <!-- JSON Viewer (shown in JSON tab) -->
+    <div id="json-panel" class="json-panel hidden">
+      <div class="json-toolbar">
+        <div class="json-toolbar-left">
+          <span id="json-count-label" class="json-count-label"></span>
+        </div>
+        <div class="json-toolbar-right">
+          <button class="json-action-btn" onclick="copyJSON()" id="copy-json-btn">
+            <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="9" y="9" width="13" height="13" rx="2"/><path d="M5 15H4a2 2 0 01-2-2V4a2 2 0 012-2h9a2 2 0 012 2v1"/></svg>
+            Copy JSON
+          </button>
+          <button class="json-action-btn" onclick="downloadJSON()">
+            <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 15v4a2 2 0 01-2 2H5a2 2 0 01-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/></svg>
+            Download .json
+          </button>
+          <button class="json-action-btn" onclick="toggleJsonWrap()" id="wrap-btn">
+            <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="17 1 21 5 17 9"/><path d="M3 11V9a4 4 0 014-4h14"/><polyline points="7 23 3 19 7 15"/><path d="M21 13v2a4 4 0 01-4 4H3"/></svg>
+            Wrap
+          </button>
+        </div>
+      </div>
+      <pre id="json-output" class="json-output"></pre>
+    </div>
+
+    <!-- Loader -->
+    <div id="loader" class="loader hidden">
+      <div class="spinner-ring"></div>
+      <span>Fetching applications…</span>
+    </div>
+
+    <!-- Empty -->
+    <div id="empty-state" class="empty-state">
+      <div class="empty-graphic">
+        <svg width="64" height="64" viewBox="0 0 64 64" fill="none">
+          <circle cx="32" cy="32" r="30" fill="rgba(20,184,166,0.06)" stroke="rgba(20,184,166,0.15)" stroke-width="2"/>
+          <path d="M22 44l4-16 6 8 5-6 5 14" stroke="rgba(20,184,166,0.5)" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/>
+          <circle cx="32" cy="22" r="4" fill="rgba(99,102,241,0.3)"/>
+        </svg>
+      </div>
+      <h2>No applications loaded</h2>
+      <p>Select a date range and click <strong>Fetch Applications</strong> to begin.</p>
+    </div>
+
+    <!-- No Results -->
+    <div id="no-results" class="empty-state hidden">
+      <div class="empty-graphic">
+        <svg width="64" height="64" viewBox="0 0 64 64" fill="none">
+          <circle cx="32" cy="32" r="30" fill="rgba(244,63,94,0.05)" stroke="rgba(244,63,94,0.15)" stroke-width="2"/>
+          <circle cx="28" cy="28" r="10" stroke="rgba(244,63,94,0.5)" stroke-width="2"/>
+          <line x1="35" y1="35" x2="46" y2="46" stroke="rgba(244,63,94,0.5)" stroke-width="2" stroke-linecap="round"/>
+          <line x1="24" y1="28" x2="32" y2="28" stroke="rgba(244,63,94,0.5)" stroke-width="2" stroke-linecap="round"/>
+        </svg>
+      </div>
+      <h2>No results found</h2>
+      <p>No applications match your search or filter. <button class="link-btn" onclick="clearAllFilters()">Clear filters</button></p>
+    </div>
+
+    <!-- Table -->
+    <div id="table-wrap" class="table-wrap hidden">
+      <div class="table-scroll">
+        <table id="main-table">
+          <thead>
+            <tr>
+              <th class="th-no">#</th>
+              <th class="sortable" data-col="name" onclick="sortBy('name')">Name <span class="sort-ind" id="si-name">↕</span></th>
+              <th>Mobile</th>
+              <th>Income</th>
+              <th class="sortable" data-col="loanAmount" onclick="sortBy('loanAmount')">Loan Amt <span class="sort-ind" id="si-loanAmount">↕</span></th>
+              <th>Purpose</th>
+              <th class="sortable" data-col="status" onclick="sortBy('status')">Status <span class="sort-ind" id="si-status">↕</span></th>
+              <th class="sortable" data-col="createdAt" onclick="sortBy('createdAt')">Date <span class="sort-ind" id="si-createdAt">↑</span></th>
+              <th>Reason</th>
+              <th class="th-action">Details</th>
+            </tr>
+          </thead>
+          <tbody id="tbody"></tbody>
+        </table>
+      </div>
+    </div>
+
+
+    <!-- Pagination -->
+    <div id="pagination" class="pagination hidden"></div>
+
+  </div><!-- /view-applications -->
+
+  <!-- ─── ANALYTICS VIEW ─── -->
+  <div id="view-stats" class="view-content hidden">
+    <div class="analytics-placeholder">
+      <svg width="48" height="48" viewBox="0 0 24 24" fill="none" stroke="rgba(20,184,166,0.4)" stroke-width="1.5"><polyline points="22 12 18 12 15 21 9 3 6 12 2 12"/></svg>
+      <h2>Analytics</h2>
+      <p>Fetch applications first, then switch here to see the charts.</p>
+      <button class="btn-primary" onclick="showView('applications')">Go to Applications</button>
+    </div>
+  </div>
+
+  <!-- ─── LOS INTEGRATION VIEW ─── -->
+  <div id="view-los-jobs" class="view-content hidden">
+    <!-- Filter Card -->
+    <div class="filter-card" style="display:flex; justify-content:space-between; align-items:center;">
+       <div class="status-chips" id="los-status-chips" style="margin: 0; padding: 0; border: none; background: transparent;">
+         <button class="chip chip-all active" data-s="ALL" onclick="setLosStatusFilter(this)">All</button>
+         <button class="chip chip-pending" data-s="PENDING" onclick="setLosStatusFilter(this)">Pending</button>
+         <button class="chip chip-approved" data-s="SUCCESS" onclick="setLosStatusFilter(this)">Success</button>
+         <button class="chip chip-rejected" data-s="FAILED" onclick="setLosStatusFilter(this)">Failed</button>
+       </div>
+       <button class="btn-primary" onclick="fetchLosJobs()">
+          <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><polyline points="1 4 1 10 7 10"/><path d="M3.51 15a9 9 0 102.13-9.36L1 10"/></svg>
+          Refresh Jobs
+       </button>
+    </div>
+
+    <!-- Table -->
+    <div id="los-table-wrap" class="table-wrap">
+      <div class="table-scroll">
+        <table id="los-table">
+          <thead>
+            <tr>
+              <th class="th-no">#</th>
+              <th>App ID</th>
+              <th>Name</th>
+              <th>Status</th>
+              <th>LOS Retry</th>
+              <th>LOS Case Number</th>
+              <th>Last Error</th>
+              <th class="th-action">Action</th>
+            </tr>
+          </thead>
+          <tbody id="los-tbody">
+             <tr><td colspan="8" style="text-align:center; padding:40px; color:var(--muted)">Click "Refresh Jobs" to begin</td></tr>
+          </tbody>
+        </table>
+      </div>
+    </div>
+  </div>
+
+</div><!-- /main-wrap -->
+<!-- ═══════════════════ DETAIL MODAL ═══════════════════ -->
+<div id="modal" class="modal-overlay hidden" onclick="closeModalOut(event)">
+  <div class="modal-card">
+    <div class="modal-hdr">
+      <div class="modal-hdr-left">
+        <div class="modal-avatar" id="modal-avatar">?</div>
+        <div class="modal-title">
+          <h2 id="modal-name">Applicant Name</h2>
+          <div class="modal-meta" id="modal-meta-row">PENDING • 12 Oct 2023</div>
+        </div>
+      </div>
+      <div style="display:flex;gap:12px;align-items:center;">
+         <button class="primary-btn" id="btn-push-los" onclick="triggerLosPush()" style="padding:6px 16px;height:32px;background:var(--indigo);border:none;">Push to LOS</button>
+         <button class="primary-btn" id="btn-open-update" onclick="openUpdateModal()" style="padding:6px 16px;height:32px;">Update</button>
+         <button class="icon-btn" onclick="closeModal()" title="Close (Esc)">✕</button>
+      </div>
+    </div>
+    <div class="modal-body" id="modal-body">
+      <!-- Dynamic Sections -->
+    </div>
+  </div>
+</div>
+
+<!-- Update Modal -->
+<div id="update-modal" class="modal-overlay hidden" style="z-index: 1002;" onclick="closeUpdateModalOut(event)">
+  <div class="modal" style="max-width: 540px;">
+    <div class="modal-hdr">
+      <div class="modal-title">
+        <h2>Update Application Status</h2>
+        <div class="modal-meta" id="update-modal-meta" style="color:var(--teal)">Application ID: -</div>
+      </div>
+      <button class="icon-btn" onclick="closeUpdateModal()">✕</button>
+    </div>
+    <div class="modal-body" style="padding: 24px; background: var(--bg2);">
+      <form id="update-form" onsubmit="submitUpdate(event)">
+        <input type="hidden" id="update-id" />
+        
+        <div style="padding:18px; background:var(--surface); border:1px solid var(--border); border-radius:var(--radius-lg); margin-bottom:20px;">
+          <h3 style="font-size:13px; font-weight:700; color:var(--text); margin-bottom:16px; display:flex; align-items:center; gap:8px;">
+            <span style="color:var(--teal)">■</span> Core Status
+          </h3>
+          <div style="display:flex; gap:16px; flex-wrap:wrap;">
+            <div class="form-group" style="flex:1; min-width:140px;">
+              <label for="update-status" style="display:block;margin-bottom:8px;font-size:10px;font-weight:700;color:var(--muted);text-transform:uppercase;letter-spacing:0.5px;">Status *</label>
+              <select id="update-status" required style="width:100%;padding:11px 14px;border-radius:8px;background:var(--bg);border:1px solid var(--border2);color:#fff;outline:none;font-weight:600;cursor:pointer;">
+                <option value="PENDING">PENDING</option>
+                <option value="APPROVED">APPROVED</option>
+                <option value="REJECTED">REJECTED</option>
+                <option value="HOLD">HOLD</option>
+                <option value="IN_PROGRESS">IN_PROGRESS</option>
+                <option value="COMPLETED">COMPLETED</option>
+                <option value="CLOSED">CLOSED</option>
+              </select>
+            </div>
+
+            <div class="form-group" style="flex:2; min-width:200px;">
+              <label for="update-reason" style="display:block;margin-bottom:8px;font-size:10px;font-weight:700;color:var(--muted);text-transform:uppercase;letter-spacing:0.5px;">Reason <span style="font-weight:500;color:var(--dim);text-transform:none">(Optional)</span></label>
+              <input type="text" id="update-reason" placeholder="e.g. Low credit score" style="width:100%;padding:11px 14px;border-radius:8px;background:var(--bg);border:1px solid var(--border2);color:#fff;outline:none;" onfocus="this.style.borderColor='var(--teal)'" onblur="this.style.borderColor='var(--border2)'" />
+            </div>
+          </div>
+        </div>
+
+        <div style="padding:18px; background:var(--surface); border:1px solid var(--border); border-radius:var(--radius-lg); margin-bottom:24px;">
+          <h3 style="font-size:13px; font-weight:700; color:var(--text); margin-bottom:16px; display:flex; align-items:center; gap:8px;">
+            <span style="color:var(--indigo)">■</span> LOS Details <span style="font-size:11px; font-weight:500; color:var(--muted);">(Optional)</span>
+          </h3>
+          
+          <div style="display:grid;grid-template-columns:1fr 1fr;gap:20px;margin-bottom:20px;">
+            <div class="form-group">
+              <label for="update-employee-name" style="display:block;margin-bottom:8px;font-size:10px;font-weight:700;color:var(--muted);text-transform:uppercase;letter-spacing:0.5px;">Reviewer Name</label>
+              <input type="text" id="update-employee-name" placeholder="Name" style="width:100%;padding:11px 14px;border-radius:8px;background:var(--bg);border:1px solid var(--border2);color:#fff;outline:none;" onfocus="this.style.borderColor='var(--indigo)'" onblur="this.style.borderColor='var(--border2)'" />
+            </div>
+            <div class="form-group">
+              <label for="update-employee-id" style="display:block;margin-bottom:8px;font-size:10px;font-weight:700;color:var(--muted);text-transform:uppercase;letter-spacing:0.5px;">Employee ID</label>
+              <input type="text" id="update-employee-id" placeholder="EMP-102" style="width:100%;padding:11px 14px;border-radius:8px;background:var(--bg);border:1px solid var(--border2);color:#fff;outline:none;" onfocus="this.style.borderColor='var(--indigo)'" onblur="this.style.borderColor='var(--border2)'" />
+            </div>
+          </div>
+
+          <div style="display:grid;grid-template-columns:1fr 1fr;gap:20px;">
+            <div class="form-group">
+              <label for="update-loan-no" style="display:block;margin-bottom:8px;font-size:10px;font-weight:700;color:var(--muted);text-transform:uppercase;letter-spacing:0.5px;">Loan Account No.</label>
+              <input type="text" id="update-loan-no" placeholder="LA-XXXX" style="width:100%;padding:11px 14px;border-radius:8px;background:var(--bg);border:1px solid var(--border2);color:#fff;outline:none;font-family:monospace;letter-spacing:0.5px;" onfocus="this.style.borderColor='var(--indigo)'" onblur="this.style.borderColor='var(--border2)'" />
+            </div>
+            <div class="form-group">
+              <label for="update-app-no" style="display:block;margin-bottom:8px;font-size:10px;font-weight:700;color:var(--muted);text-transform:uppercase;letter-spacing:0.5px;">External App No.</label>
+              <input type="text" id="update-app-no" placeholder="APP-XXXX" style="width:100%;padding:11px 14px;border-radius:8px;background:var(--bg);border:1px solid var(--border2);color:#fff;outline:none;font-family:monospace;letter-spacing:0.5px;" onfocus="this.style.borderColor='var(--indigo)'" onblur="this.style.borderColor='var(--border2)'" />
+            </div>
+          </div>
+        </div>
+
+        <div style="display:flex;justify-content:flex-end;gap:14px;align-items:center;">
+          <button type="button" class="btn-ghost" style="padding:10px 20px; font-size:12px;" onclick="closeUpdateModal()">Cancel</button>
+          <button type="submit" class="btn-primary" id="btn-submit-update">Confirm Update ✓</button>
+        </div>
+      </form>
+    </div>
+  </div>
+</div>
+
+<script src="app.js"></script>
+</body>
+</html>
