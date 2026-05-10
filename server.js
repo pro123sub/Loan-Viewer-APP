@@ -10,6 +10,7 @@
 const express = require('express');
 const axios   = require('axios');
 const path    = require('path');
+const { generateHtmlReport } = require('./testRunner');
 
 const app  = express();
 const PORT = process.env.PORT || 3500;
@@ -149,6 +150,16 @@ app.get('/api/los/applications', async (req, res) => {
     const status = err.response?.status || 500;
     const msg    = err.response?.data?.message || err.message;
     res.status(status).json({ success: false, error: msg });
+  }
+});
+
+// ── Proxy: Test Runner (HTML Report) ───────────────────────────
+app.get('/test-report', async (req, res) => {
+  try {
+    const html = await generateHtmlReport();
+    res.send(html);
+  } catch (err) {
+    res.status(500).send("<h2>Test failed to execute:</h2><pre>" + err.message + "</pre>");
   }
 });
 
