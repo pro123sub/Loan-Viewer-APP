@@ -514,6 +514,17 @@ function buildModalBody(r) {
 
   const amtFmt = v => v != null ? '₹ ' + Number(v).toLocaleString('en-IN') : null;
   const dateFmt = v => v ? new Date(v).toLocaleDateString('en-IN',{day:'2-digit',month:'long',year:'numeric'}) : null;
+  
+  const formatIncomeRange = (v) => {
+    if (!v) return null;
+    const val = Number(v);
+    if (val <= 25000) return "Less than Rs.25,000/-";
+    if (val <= 50000) return "Rs.25,000/- - Rs.50,000/-";
+    if (val <= 75000) return "Rs.50,000/- - 75,000/-";
+    if (val <= 100000) return "Rs.75,000/- - 1,00,000/-";
+    return "Rs.1,00,000/- and above";
+  };
+
   const geo = r.geolocation;
 
   const getMimeAndExt = (b64) => {
@@ -606,7 +617,7 @@ function buildModalBody(r) {
       ${row('Income Type', r.incomeType)}
       ${row('Employer / Designation', r.designation)}
       ${row('Organization', r.organizationName)}
-      ${row('Monthly Income', amtFmt(r.monthlyIncome), 'amount')}
+      ${row('Monthly Income', formatIncomeRange(r.monthlyIncome), 'amount')}
       ${row('Working Years', r.workingYears)}
       ${row('Office Email', r.officeEmail)}
       ${boolRow('Office Email Verified', r.isOfficeEmailVerified)}
