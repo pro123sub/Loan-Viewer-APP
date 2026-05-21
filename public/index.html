@@ -47,6 +47,16 @@
       LOS Integration
     </a>
 
+    <div class="nav-section-label" style="margin-top: 20px;">Smart Audit</div>
+    <a class="nav-item" href="#" onclick="showView('audit')" id="nav-audit">
+      <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M9 11l3 3L22 4"/><path d="M21 12v7a2 2 0 01-2 2H5a2 2 0 01-2-2V5a2 2 0 012-2h11"/></svg>
+      Audit Center
+    </a>
+    <a class="nav-item" href="#" onclick="showView('scanner')" id="nav-scanner">
+      <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="11" cy="11" r="8"/><line x1="21" y1="21" x2="16.65" y2="16.65"/><line x1="11" y1="8" x2="11" y2="14"/><line x1="8" y1="11" x2="14" y2="11"/></svg>
+      Hardcode Scanner
+    </a>
+
     <div class="nav-section-label" style="margin-top: 20px;">System Health</div>
     <a class="nav-item" href="/test-report" target="_blank" style="color: #38bdf8;">
       <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M22 11.08V12a10 10 0 11-5.93-9.14"/><polyline points="22 4 12 14.01 9 11.01"/></svg>
@@ -386,6 +396,196 @@
   </div>
 
 </div><!-- /main-wrap -->
+
+<!-- ═══════════════════ SMART AUDIT VIEW ═══════════════════ -->
+<div id="view-audit" class="view-content hidden">
+
+  <!-- Summary Cards -->
+  <div class="audit-summary-row" id="audit-summary-row">
+    <div class="audit-card audit-card-total" id="acard-total">
+      <div class="audit-card-icon">📋</div>
+      <div class="audit-card-body"><span class="audit-card-num" id="ac-total">-</span><span class="audit-card-label">Total Audited</span></div>
+    </div>
+    <div class="audit-card audit-card-ok" id="acard-ok">
+      <div class="audit-card-icon">✅</div>
+      <div class="audit-card-body"><span class="audit-card-num" id="ac-eligible">-</span><span class="audit-card-label">Export Eligible</span></div>
+    </div>
+    <div class="audit-card audit-card-fail" id="acard-fail">
+      <div class="audit-card-icon">❌</div>
+      <div class="audit-card-body"><span class="audit-card-num" id="ac-failed">-</span><span class="audit-card-label">Not Exported</span></div>
+    </div>
+    <div class="audit-card audit-card-cat" id="acard-reloan">
+      <div class="audit-card-icon">🔁</div>
+      <div class="audit-card-body"><span class="audit-card-num" id="ac-reloan">-</span><span class="audit-card-label">Reloans</span></div>
+    </div>
+    <div class="audit-card audit-card-cat" id="acard-fresh">
+      <div class="audit-card-icon">🆕</div>
+      <div class="audit-card-body"><span class="audit-card-num" id="ac-fresh">-</span><span class="audit-card-label">Fresh Loans</span></div>
+    </div>
+  </div>
+
+  <!-- Controls -->
+  <div class="filter-card" style="margin-bottom:16px;">
+    <div class="filter-row" style="flex-wrap:wrap;gap:12px;">
+      <div class="field" style="min-width:160px;">
+        <label>Filter by Result</label>
+        <select id="audit-filter-eligible" onchange="loadAuditLogs()" style="width:100%;height:38px;padding:0 10px;border-radius:8px;background:var(--bg2);border:1px solid var(--border2);color:#fff;">
+          <option value="">All Results</option>
+          <option value="false">❌ Not Exported Only</option>
+          <option value="true">✅ Eligible Only</option>
+        </select>
+      </div>
+      <div class="field" style="min-width:200px;">
+        <label>Filter by Category</label>
+        <select id="audit-filter-category" onchange="loadAuditLogs()" style="width:100%;height:38px;padding:0 10px;border-radius:8px;background:var(--bg2);border:1px solid var(--border2);color:#fff;">
+          <option value="">All Categories</option>
+          <option value="COMPLETE_FRESH_LOAN">Complete Fresh Loan</option>
+          <option value="COMPLETE_RELOAN">Complete Reloan</option>
+          <option value="INCOMPLETE_FRESH_LOAN">Incomplete Fresh Loan</option>
+          <option value="INCOMPLETE_RELOAN">Incomplete Reloan</option>
+        </select>
+      </div>
+      <div class="field" style="flex:1;min-width:180px;">
+        <label>Search Customer</label>
+        <input type="text" id="audit-search" placeholder="Name / Phone / ID…" oninput="loadAuditLogs()" style="width:100%;height:38px;padding:0 12px;border-radius:8px;background:var(--bg2);border:1px solid var(--border2);color:#fff;" />
+      </div>
+      <div class="field" style="display:flex;gap:8px;align-items:flex-end;">
+        <button class="btn-primary" onclick="loadAuditLogs()" style="height:38px;padding:0 18px;">
+          <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><polyline points="1 4 1 10 7 10"/><path d="M3.51 15a9 9 0 102.13-9.36L1 10"/></svg>
+          Refresh
+        </button>
+        <button class="btn-ghost" onclick="triggerBulkAudit()" style="height:38px;padding:0 14px;" title="Re-audit all apps in last 30 days">
+          🔄 Bulk Audit
+        </button>
+        <button class="btn-ghost" onclick="exportAuditReport()" style="height:38px;padding:0 14px;">
+          ⬇ Export
+        </button>
+      </div>
+    </div>
+  </div>
+
+  <!-- Audit Table -->
+  <div class="table-wrap" style="margin-top:0;">
+    <div class="table-scroll">
+      <table id="audit-table">
+        <thead>
+          <tr>
+            <th style="width:28px">#</th>
+            <th>Customer Name</th>
+            <th>Phone</th>
+            <th>Category</th>
+            <th>Profile</th>
+            <th>PAN</th>
+            <th>Aadhaar</th>
+            <th>Export</th>
+            <th style="width:220px">Issues / Warnings</th>
+            <th>Audited At</th>
+            <th class="th-action">Action</th>
+          </tr>
+        </thead>
+        <tbody id="audit-tbody">
+          <tr><td colspan="11" style="text-align:center;padding:40px;color:var(--muted)">Click Refresh to load audit data</td></tr>
+        </tbody>
+      </table>
+    </div>
+  </div>
+
+  <!-- Audit Detail Modal -->
+  <div id="audit-detail-modal" class="modal-overlay hidden" onclick="closeAuditModal(event)">
+    <div class="modal-card" style="max-width:680px;">
+      <div class="modal-hdr">
+        <div class="modal-hdr-left">
+          <div class="modal-avatar" id="audit-modal-avatar" style="background:linear-gradient(135deg,#f59e0b,#ef4444);">A</div>
+          <div class="modal-title">
+            <h2 id="audit-modal-name">Audit Detail</h2>
+            <div class="modal-meta" id="audit-modal-meta" style="color:var(--teal)"></div>
+          </div>
+        </div>
+        <button class="icon-btn" onclick="document.getElementById('audit-detail-modal').classList.add('hidden')">✕</button>
+      </div>
+      <div class="modal-body" id="audit-modal-body" style="padding:24px;"></div>
+    </div>
+  </div>
+</div>
+
+<!-- ═══════════════════ HARDCODE SCANNER VIEW ═══════════════════ -->
+<div id="view-scanner" class="view-content hidden">
+  <div class="filter-card" style="display:flex;align-items:center;justify-content:space-between;gap:16px;flex-wrap:wrap;">
+    <div>
+      <h3 style="margin:0 0 4px;font-size:15px;font-weight:700;">🔍 Hardcoded Value Scanner</h3>
+      <p style="margin:0;font-size:12px;color:var(--muted);">Scans Backend + Frontend source files for hardcoded placeholders that could cause data quality issues.</p>
+    </div>
+    <div style="display:flex;gap:10px;">
+      <button class="btn-primary" onclick="runHardcodeScan()" id="scan-btn" style="height:38px;padding:0 20px;">
+        🚀 Run Scan
+      </button>
+      <button class="btn-ghost" onclick="exportScanReport()" id="scan-export-btn" style="height:38px;padding:0 16px;display:none;">
+        ⬇ Export
+      </button>
+    </div>
+  </div>
+
+  <!-- Severity Summary -->
+  <div id="scan-summary-row" class="audit-summary-row" style="display:none;">
+    <div class="audit-card" style="border-color:#ef4444;">
+      <div class="audit-card-icon">🔴</div>
+      <div class="audit-card-body"><span class="audit-card-num" id="sc-critical">0</span><span class="audit-card-label">Critical</span></div>
+    </div>
+    <div class="audit-card" style="border-color:#f97316;">
+      <div class="audit-card-icon">🟠</div>
+      <div class="audit-card-body"><span class="audit-card-num" id="sc-high">0</span><span class="audit-card-label">High</span></div>
+    </div>
+    <div class="audit-card" style="border-color:#eab308;">
+      <div class="audit-card-icon">🟡</div>
+      <div class="audit-card-body"><span class="audit-card-num" id="sc-medium">0</span><span class="audit-card-label">Medium</span></div>
+    </div>
+    <div class="audit-card" style="border-color:#6366f1;">
+      <div class="audit-card-icon">🔵</div>
+      <div class="audit-card-body"><span class="audit-card-num" id="sc-low">0</span><span class="audit-card-label">Low</span></div>
+    </div>
+    <div class="audit-card">
+      <div class="audit-card-icon">📁</div>
+      <div class="audit-card-body"><span class="audit-card-num" id="sc-total">0</span><span class="audit-card-label">Total Findings</span></div>
+    </div>
+  </div>
+
+  <div id="scan-loader" class="loader hidden" style="margin:60px auto;"><div class="spinner-ring"></div><span>Scanning source files…</span></div>
+
+  <!-- Findings Table -->
+  <div id="scan-table-wrap" class="table-wrap" style="margin-top:16px;display:none;">
+    <div style="display:flex;align-items:center;gap:12px;margin-bottom:10px;">
+      <input type="text" id="scan-search" placeholder="Filter findings…" oninput="filterScanTable()" style="flex:1;height:36px;padding:0 12px;border-radius:8px;background:var(--bg2);border:1px solid var(--border2);color:#fff;" />
+      <select id="scan-severity-filter" onchange="filterScanTable()" style="height:36px;padding:0 10px;border-radius:8px;background:var(--bg2);border:1px solid var(--border2);color:#fff;">
+        <option value="">All Severities</option>
+        <option value="CRITICAL">🔴 Critical</option>
+        <option value="HIGH">🟠 High</option>
+        <option value="MEDIUM">🟡 Medium</option>
+        <option value="LOW">🔵 Low</option>
+      </select>
+    </div>
+    <div class="table-scroll">
+      <table id="scan-table">
+        <thead>
+          <tr>
+            <th style="width:28px">#</th>
+            <th>Severity</th>
+            <th>Issue</th>
+            <th>File</th>
+            <th style="width:50px">Line</th>
+            <th>Code Snippet</th>
+          </tr>
+        </thead>
+        <tbody id="scan-tbody"></tbody>
+      </table>
+    </div>
+  </div>
+
+  <div id="scan-empty" style="text-align:center;padding:60px 20px;display:none;">
+    <div style="font-size:48px;margin-bottom:16px;">✅</div>
+    <h2 style="color:var(--teal);">No hardcoded values found!</h2>
+    <p style="color:var(--muted);">All scanned files look clean.</p>
+  </div>
+</div>
 <!-- ═══════════════════ DETAIL MODAL ═══════════════════ -->
 <div id="modal" class="modal-overlay hidden" onclick="closeModalOut(event)">
   <div class="modal-card">

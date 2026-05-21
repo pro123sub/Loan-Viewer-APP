@@ -153,6 +153,150 @@ app.get('/api/los/applications', async (req, res) => {
   }
 });
 
+// ═══════════════════════════════════════════════════════════════
+//  SMART AUDIT PROXY ROUTES
+// ═══════════════════════════════════════════════════════════════
+
+// ── Proxy: Get audit logs (with filters) ────────────────────────
+app.get('/api/audit/logs', async (req, res) => {
+  try {
+    const r = await axios.get(`${LIN_API_BASE}/api/audit/logs`, {
+      params: req.query,
+      headers: { Authorization: `Key ${LIN_API_KEY}` },
+      timeout: 15000
+    });
+    res.json(r.data);
+  } catch (err) {
+    res.status(err.response?.status || 500).json({ success: false, error: err.response?.data?.message || err.message });
+  }
+});
+
+// ── Proxy: Not-exported applications ────────────────────────────
+app.get('/api/audit/not-exported', async (req, res) => {
+  try {
+    const r = await axios.get(`${LIN_API_BASE}/api/audit/not-exported`, {
+      params: req.query,
+      headers: { Authorization: `Key ${LIN_API_KEY}` },
+      timeout: 15000
+    });
+    res.json(r.data);
+  } catch (err) {
+    res.status(err.response?.status || 500).json({ success: false, error: err.response?.data?.message || err.message });
+  }
+});
+
+// ── Proxy: Run single audit ──────────────────────────────────────
+app.post('/api/audit/run/:userId/:applicationId?', async (req, res) => {
+  try {
+    const { userId, applicationId } = req.params;
+    const url = applicationId
+      ? `${LIN_API_BASE}/api/audit/run/${userId}/${applicationId}`
+      : `${LIN_API_BASE}/api/audit/run/${userId}`;
+    const r = await axios.post(url, {}, {
+      headers: { Authorization: `Key ${LIN_API_KEY}` },
+      timeout: 15000
+    });
+    res.json(r.data);
+  } catch (err) {
+    res.status(err.response?.status || 500).json({ success: false, error: err.response?.data?.message || err.message });
+  }
+});
+
+// ── Proxy: Bulk audit ────────────────────────────────────────────
+app.post('/api/audit/bulk', async (req, res) => {
+  try {
+    const r = await axios.post(`${LIN_API_BASE}/api/audit/bulk`, req.body, {
+      headers: { Authorization: `Key ${LIN_API_KEY}`, 'Content-Type': 'application/json' },
+      timeout: 60000
+    });
+    res.json(r.data);
+  } catch (err) {
+    res.status(err.response?.status || 500).json({ success: false, error: err.response?.data?.message || err.message });
+  }
+});
+
+// ── Hardcode Scanner — static analysis of backend source code ───
+const fs   = require('fs');
+const fsp  = fs.promises;
+const pathm = require('path');
+
+// Patterns that indicate suspicious hardcoded values
+const HARDCODE_PATTERNS = [
+  { pattern: /['"`]Delhi['"`]/gi,        label: 'Hardcoded city: Delhi',          severity: 'HIGH'   },
+  { pattern: /['"`]110001['"`]/gi,       label: 'Hardcoded pin code: 110001',     severity: 'HIGH'   },
+  { pattern: /['"`]000000['"`]/gi,       label: 'Hardcoded pin code: 000000',     severity: 'HIGH'   },
+  { pattern: /['"`]N\/A['"`]/gi,         label: 'Hardcoded placeholder: N/A',     severity: 'MEDIUM' },
+  { pattern: /['"`]-['"`]/gi,            label: 'Hardcoded placeholder: -',       severity: 'LOW'    },
+  { pattern: /['"`]Salaried['"`]/gi,     label: 'Hardcoded occupation: Salaried', severity: 'MEDIUM' },
+  { pattern: /['"`]Bank Transfer['"`]/gi,label: 'Hardcoded salary mode',          severity: 'MEDIUM' },
+  { pattern: /paromita\$432/gi,          label: 'API Key hardcoded in source',    severity: 'CRITICAL'},
+  { pattern: /['"`]30000['"`]/gi,        label: 'Hardcoded salary: 30000',        severity: 'MEDIUM' },
+  { pattern: /\|\|\s*['"`]Delhi['"`]/gi, label: 'Default fallback to Delhi',      severity: 'HIGH'   },
+];
+
+const SCAN_EXTENSIONS = ['.js', '.ts', '.tsx', '.jsx'];
+const SCAN_IGNORE     = ['node_modules', '.git', '.next', 'dist', 'build', 'coverage'];
+
+async function scanDir(dir, results = []) {
+  let entries;
+  try { entries = await fsp.readdir(dir, { withFileTypes: true }); } catch { return results; }
+
+  for (const entry of entries) {
+    if (SCAN_IGNORE.some(ig => entry.name === ig)) continue;
+    const full = pathm.join(dir, entry.name);
+    if (entry.isDirectory()) {
+      await scanDir(full, results);
+    } else if (SCAN_EXTENSIONS.includes(pathm.extname(entry.name))) {
+      let src;
+      try { src = await fsp.readFile(full, 'utf8'); } catch { continue; }
+      const lines = src.split('\n');
+      lines.forEach((line, i) => {
+        for (const { pattern, label, severity } of HARDCODE_PATTERNS) {
+          if (pattern.test(line)) {
+            results.push({
+              file:     full,
+              line:     i + 1,
+              code:     line.trim().slice(0, 120),
+              label,
+              severity
+            });
+          }
+          pattern.lastIndex = 0;
+        }
+      });
+    }
+  }
+  return results;
+}
+
+app.get('/api/audit/scan', async (req, res) => {
+  try {
+    // Scan Backend + LIN_Front (relative to this server)
+    const backendDir  = pathm.join(__dirname, '..', 'Backend');
+    const frontendDir = pathm.join(__dirname, '..', 'LIN_Front');
+
+    const [backendFindings, frontendFindings] = await Promise.all([
+      fs.existsSync(backendDir)  ? scanDir(backendDir)  : [],
+      fs.existsSync(frontendDir) ? scanDir(frontendDir) : [],
+    ]);
+
+    const all = [...backendFindings, ...frontendFindings];
+
+    const summary = {
+      CRITICAL: all.filter(f => f.severity === 'CRITICAL').length,
+      HIGH:     all.filter(f => f.severity === 'HIGH').length,
+      MEDIUM:   all.filter(f => f.severity === 'MEDIUM').length,
+      LOW:      all.filter(f => f.severity === 'LOW').length,
+      total:    all.length
+    };
+
+    res.json({ success: true, summary, findings: all });
+  } catch (err) {
+    res.status(500).json({ success: false, error: err.message });
+  }
+});
+
+
 // ── Proxy: Test Runner (HTML Report) ───────────────────────────
 app.get('/test-report', async (req, res) => {
   try {

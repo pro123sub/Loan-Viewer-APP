@@ -55,13 +55,44 @@ async function checkUpstreamHealth() {
 
 /* ─── Views ─────────────────────────────────────────────── */
 function showView(name) {
+  // Hide all view panels
   document.querySelectorAll('.view-content').forEach(v => v.classList.add('hidden'));
-  $(`view-${name}`).classList.remove('hidden');
-  document.querySelectorAll('.nav-item').forEach(n => n.classList.remove('active'));
-  const titles = { applications: 'All Applications', stats: 'Analytics', 'los-jobs': 'LOS Integration Jobs' };
-  const subs   = { applications: 'Fetch loan applications by date range', stats: 'Charts and breakdowns', 'los-jobs': 'Monitor and manual trigger for LOS sync tasks' };
+  
+  // Show target view
+  const target = $(`view-${name}`);
+  if (target) target.classList.remove('hidden');
+  
+  // Highlight active sidebar item
+  document.querySelectorAll('.nav-item').forEach(n => {
+    n.classList.remove('active');
+    const onc = n.getAttribute('onclick') || '';
+    if (onc.includes(`showView('${name}')`)) {
+      n.classList.add('active');
+    }
+  });
+
+  const titles = { 
+    applications: 'All Applications', 
+    stats: 'Analytics', 
+    'los-jobs': 'LOS Integration Jobs',
+    audit: 'Smart Audit Center',
+    scanner: 'Hardcoded Value Detector'
+  };
+  const subs   = { 
+    applications: 'Fetch loan applications by date range', 
+    stats: 'Charts and breakdowns', 
+    'los-jobs': 'Monitor and manual trigger for LOS sync tasks',
+    audit: 'Categorization, document validation, and export logs',
+    scanner: 'Static analysis tool to scan source code for hardcoded defaults'
+  };
+  
   $('page-title').textContent = titles[name] || name;
   $('page-sub').textContent   = subs[name]   || '';
+
+  // Trigger page-specific loads
+  if (name === 'audit') {
+    loadAuditLogs();
+  }
 }
 
 function toggleSidebar() {
@@ -976,4 +1007,593 @@ function viewLosRawResponse(idx) {
   } else {
       alert(JSON.stringify(raw, null, 2));
   }
+}
+
+/* ─── Smart Audit Logic ──────────────────────────────────── */
+let auditLogs = [];
+
+async function loadAuditLogs() {
+  const eligible = $('audit-filter-eligible').value;
+  const category = $('audit-filter-category').value;
+  const search = $('audit-search').value;
+
+  let query = '?limit=100';
+  if (eligible) query += `&exportEligible=${eligible}`;
+  if (category) query += `&category=${category}`;
+  if (search) query += `&search=${encodeURIComponent(search)}`;
+
+  const tbody = $('audit-tbody');
+  tbody.innerHTML = '<tr><td colspan="11" style="text-align:center;padding:40px;color:var(--muted)">Loading audit data...</td></tr>';
+
+  try {
+    const res = await fetch(`/api/audit/logs${query}`);
+    const data = await res.json();
+    if (!res.ok || !data.success) {
+      throw new Error(data.error || data.message || 'Failed to load audit logs');
+    }
+
+    auditLogs = data.logs || [];
+    
+    // Update summary counts
+    if (data.summary) {
+      $('ac-total').textContent = data.summary.total ?? 0;
+      $('ac-eligible').textContent = data.summary.exportEligible ?? 0;
+      $('ac-failed').textContent = data.summary.notExported ?? 0;
+      if (data.summary.byCategory) {
+        const reloans = (data.summary.byCategory.COMPLETE_RELOAN || 0) + (data.summary.byCategory.INCOMPLETE_RELOAN || 0);
+        const fresh = (data.summary.byCategory.COMPLETE_FRESH_LOAN || 0) + (data.summary.byCategory.INCOMPLETE_FRESH_LOAN || 0);
+        $('ac-reloan').textContent = reloans;
+        $('ac-fresh').textContent = fresh;
+      }
+    }
+
+    renderAuditTable();
+  } catch (err) {
+    console.error(err);
+    tbody.innerHTML = `<tr><td colspan="11" style="text-align:center;padding:40px;color:var(--red)">Failed: ${err.message}</td></tr>`;
+  }
+}
+
+function renderAuditTable() {
+  const tbody = $('audit-tbody');
+  tbody.innerHTML = '';
+
+  if (auditLogs.length === 0) {
+    tbody.innerHTML = '<tr><td colspan="11" style="text-align:center;padding:40px;color:var(--muted)">No audit logs matching filters</td></tr>';
+    return;
+  }
+
+  auditLogs.forEach((log, idx) => {
+    const dateStr = log.auditedAt ? new Date(log.auditedAt).toLocaleString('en-IN', {day:'2-digit',month:'short',hour:'2-digit',minute:'2-digit'}) : '—';
+    
+    // Categories and badge mapping
+    let catClass = 'badge-other';
+    if (log.category.includes('RELOAN')) catClass = 'badge-HOLD';
+    if (log.category.includes('COMPLETE')) catClass = 'badge-APPROVED';
+
+    // Issues and Warnings formatting
+    let issuesHtml = '';
+    if (log.issues && log.issues.length > 0) {
+      log.issues.forEach(issue => {
+        issuesHtml += `<span class="issue-tag" title="${esc(issue)}">❌ ${esc(trunc(issue, 28))}</span> `;
+      });
+    }
+    if (log.warnings && log.warnings.length > 0) {
+      log.warnings.forEach(warning => {
+        issuesHtml += `<span class="warning-tag" title="${esc(warning)}">⚠️ ${esc(trunc(warning, 28))}</span> `;
+      });
+    }
+    if (!issuesHtml) {
+      issuesHtml = '<span class="eligible-tag">✅ Clean</span>';
+    }
+
+    const tr = document.createElement('tr');
+    tr.innerHTML = `
+      <td class="td-no">${idx + 1}</td>
+      <td style="font-weight:600">${esc(log.customerName)}</td>
+      <td class="mono">${esc(log.phone) || '—'}</td>
+      <td><span class="badge ${catClass}" style="font-size:10px">${esc(log.category)}</span></td>
+      <td><span class="badge ${log.isProfileComplete ? 'badge-APPROVED' : 'badge-REJECTED'}">${log.isProfileComplete ? 'Complete' : 'Incomplete'}</span></td>
+      <td>${log.panVerified ? '✅' : '❌'}</td>
+      <td>${log.aadhaarVerified ? '✅' : '❌'}</td>
+      <td><span class="badge ${log.exportEligible ? 'badge-APPROVED' : 'badge-REJECTED'}">${log.exportEligible ? 'Eligible' : 'Blocked'}</span></td>
+      <td><div style="display:flex;flex-wrap:wrap;max-width:240px;">${issuesHtml}</div></td>
+      <td style="color:var(--muted);font-size:11px">${dateStr}</td>
+      <td class="th-action">
+        <button class="view-btn" onclick="openAuditModal(${idx})">Detail</button>
+      </td>
+    `;
+    tbody.appendChild(tr);
+  });
+}
+
+function openAuditModal(idx) {
+  const log = auditLogs[idx];
+  if (!log) return;
+
+  const initials = (log.customerName || '?').split(' ').map(n => n[0]).join('').slice(0, 2).toUpperCase();
+  $('audit-modal-avatar').textContent = initials;
+  $('audit-modal-name').textContent = log.customerName;
+  $('audit-modal-meta').textContent = `${log.category} | Triggered by: ${log.triggeredBy}`;
+
+  // Build report modal body
+  let html = `
+    <div class="audit-modal-section">
+      <div class="audit-modal-section-title">Identity & Profile</div>
+      <div class="audit-modal-item"><div class="audit-modal-label">User ID:</div><div class="audit-modal-val mono">${log.userId}</div></div>
+      <div class="audit-modal-item"><div class="audit-modal-label">Customer ID:</div><div class="audit-modal-val mono">${log.customerId || 'N/A'}</div></div>
+      <div class="audit-modal-item"><div class="audit-modal-label">Phone:</div><div class="audit-modal-val mono">${log.phone || '—'}</div></div>
+      <div class="audit-modal-item"><div class="audit-modal-label">Email:</div><div class="audit-modal-val">${log.email || '—'}</div></div>
+      <div class="audit-modal-item"><div class="audit-modal-label">Profile Completeness:</div><div class="audit-modal-val">${log.isProfileComplete ? '✅ Complete (KYC done)' : '❌ Incomplete'}</div></div>
+      <div class="audit-modal-item"><div class="audit-modal-label">PAN Verified:</div><div class="audit-modal-val">${log.panVerified ? '✅ Yes' : '❌ No'}</div></div>
+      <div class="audit-modal-item"><div class="audit-modal-label">Aadhaar Verified:</div><div class="audit-modal-val">${log.aadhaarVerified ? '✅ Yes' : '❌ No'}</div></div>
+    </div>
+
+    <div class="audit-modal-section">
+      <div class="audit-modal-section-title">Application Status</div>
+      <div class="audit-modal-item"><div class="audit-modal-label">Application ID:</div><div class="audit-modal-val mono">${log.applicationId || 'N/A'}</div></div>
+      <div class="audit-modal-item"><div class="audit-modal-label">Loan Mode:</div><div class="audit-modal-val">${log.isReloan ? '🔁 Reloan (Application #' + log.totalApplications + ')' : '🆕 Fresh Loan'}</div></div>
+      <div class="audit-modal-item"><div class="audit-modal-label">Export Eligible:</div><div class="audit-modal-val">${log.exportEligible ? '✅ YES' : '❌ NO'}</div></div>
+    </div>
+  `;
+
+  if (log.issues && log.issues.length > 0) {
+    html += `
+      <div class="audit-modal-section">
+        <div class="audit-modal-section-title" style="color:var(--red)">❌ Hard Blockers (Preventing Export)</div>
+        <ul style="padding-left:20px;margin:0;color:var(--red);font-size:13px;line-height:1.6;">
+          ${log.issues.map(issue => `<li>${esc(issue)}</li>`).join('')}
+        </ul>
+      </div>
+    `;
+  }
+
+  if (log.warnings && log.warnings.length > 0) {
+    html += `
+      <div class="audit-modal-section">
+        <div class="audit-modal-section-title" style="color:var(--amber)">⚠️ Soft Warnings (Missing Optional Data)</div>
+        <ul style="padding-left:20px;margin:0;color:var(--amber);font-size:13px;line-height:1.6;">
+          ${log.warnings.map(warning => `<li>${esc(warning)}</li>`).join('')}
+        </ul>
+      </div>
+    `;
+  }
+
+  $('audit-modal-body').innerHTML = html;
+  $('audit-detail-modal').classList.remove('hidden');
+}
+
+function closeAuditModal(e) {
+  if (e.target === $('audit-detail-modal') || e === true) {
+    $('audit-detail-modal').classList.add('hidden');
+  }
+}
+
+async function triggerBulkAudit() {
+  if (!confirm('Re-audit all applications in the last 30 days? This may take a minute.')) return;
+  
+  const startDate = new Date();
+  startDate.setDate(startDate.getDate() - 30);
+  
+  try {
+    const res = await fetch('/api/audit/bulk', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        startDate: startDate.toISOString(),
+        limit: 100
+      })
+    });
+    const parsed = await res.json();
+    if (!res.ok || !parsed.success) {
+      throw new Error(parsed.error || parsed.message || 'Bulk audit failed');
+    }
+    
+    alert(`Bulk audit complete!\nAudited: ${parsed.summary.total}\nEligible: ${parsed.summary.exportEligible}\nBlocked: ${parsed.summary.notExported}`);
+    loadAuditLogs();
+  } catch (err) {
+    alert('Error running bulk audit: ' + err.message);
+  }
+}
+
+function exportAuditReport() {
+  if (!auditLogs.length) return;
+  const cols = [
+    ['Customer Name','customerName'],['Phone','phone'],['Email','email'],
+    ['Category','category'],['Profile Complete','isProfileComplete'],
+    ['PAN Verified','panVerified'],['Aadhaar Verified','aadhaarVerified'],
+    ['Export Eligible','exportEligible'],['Audited At','auditedAt'],
+    ['Issues','issues'],['Warnings','warnings']
+  ];
+  const header = cols.map(c => `"${c[0]}"`).join(',');
+  const rows = auditLogs.map(r =>
+    cols.map(c => {
+      let v = r[c[1]];
+      if (Array.isArray(v)) {
+        v = v.join('; ');
+      }
+      return v == null ? '""' : `"${String(v).replace(/"/g,'""')}"`;
+    }).join(',')
+  );
+  const blob = new Blob([[header,...rows].join('\n')], { type:'text/csv;charset=utf-8;' });
+  const url  = URL.createObjectURL(blob);
+  const a    = document.createElement('a');
+  a.href = url; a.download = `audit_report_${new Date().toISOString().slice(0,10)}.csv`;
+  a.click(); URL.revokeObjectURL(url);
+}
+
+/* ─── Hardcode Scanner Logic ────────────────────────────── */
+let scanFindings = [];
+
+async function runHardcodeScan() {
+  $('scan-btn').disabled = true;
+  $('scan-btn').textContent = 'Scanning...';
+  $('scan-loader').classList.remove('hidden');
+  $('scan-summary-row').style.display = 'none';
+  $('scan-table-wrap').style.display = 'none';
+  $('scan-empty').style.display = 'none';
+
+  try {
+    const res = await fetch('/api/audit/scan');
+    const data = await res.json();
+    if (!res.ok || !data.success) {
+      throw new Error(data.error || 'Scan failed');
+    }
+
+    scanFindings = data.findings || [];
+
+    // Render summary counts
+    if (data.summary) {
+      $('sc-critical').textContent = data.summary.CRITICAL ?? 0;
+      $('sc-high').textContent = data.summary.HIGH ?? 0;
+      $('sc-medium').textContent = data.summary.MEDIUM ?? 0;
+      $('sc-low').textContent = data.summary.LOW ?? 0;
+      $('sc-total').textContent = data.summary.total ?? 0;
+    }
+
+    $('scan-summary-row').style.display = 'grid';
+
+    if (scanFindings.length === 0) {
+      $('scan-empty').style.display = 'block';
+      $('scan-export-btn').style.display = 'none';
+    } else {
+      $('scan-table-wrap').style.display = 'block';
+      $('scan-export-btn').style.display = 'inline-flex';
+      renderScanTable(scanFindings);
+    }
+  } catch (err) {
+    alert('Scan error: ' + err.message);
+  } finally {
+    $('scan-btn').disabled = false;
+    $('scan-btn').textContent = 'Run Scan';
+    $('scan-loader').classList.add('hidden');
+  }
+}
+
+function renderScanTable(findings) {
+  const tbody = $('scan-tbody');
+  tbody.innerHTML = '';
+
+  findings.forEach((f, idx) => {
+    // extract filename from path for display, keep full path as tooltip
+    const parts = f.file.split(/[\\/]/);
+    const shortFile = parts[parts.length - 2] + '/' + parts[parts.length - 1];
+
+    const tr = document.createElement('tr');
+    tr.innerHTML = `
+      <td class="td-no">${idx + 1}</td>
+      <td><span class="sev-badge sev-${f.severity}">${f.severity}</span></td>
+      <td style="font-weight:600">${esc(f.label)}</td>
+      <td title="${esc(f.file)}" style="color:var(--teal)">${esc(shortFile)}</td>
+      <td class="mono" style="text-align:center">${f.line}</td>
+      <td><div class="scan-code-snippet" title="${esc(f.code)}">${esc(f.code)}</div></td>
+    `;
+    tbody.appendChild(tr);
+  });
+}
+
+function filterScanTable() {
+  const q = ($('scan-search').value || '').toLowerCase().trim();
+  const sev = $('scan-severity-filter').value;
+
+  const filteredFindings = scanFindings.filter(f => {
+    const matchSev = !sev || f.severity === sev;
+    if (!matchSev) return false;
+    if (!q) return true;
+    return [f.label, f.file, f.code].join(' ').toLowerCase().includes(q);
+  });
+
+  renderScanTable(filteredFindings);
+}
+
+function exportScanReport() {
+  if (!scanFindings.length) return;
+  const cols = [
+    ['Severity','severity'],['Issue','label'],['File','file'],['Line','line'],['Code Snippet','code']
+  ];
+  const header = cols.map(c => `"${c[0]}"`).join(',');
+  const rows = scanFindings.map(r =>
+    cols.map(c => { const v = r[c[1]]; return v == null ? '""' : `"${String(v).replace(/"/g,'""')}"`; }).join(',')
+  );
+  const blob = new Blob([[header,...rows].join('\n')], { type:'text/csv;charset=utf-8;' });
+  const url  = URL.createObjectURL(blob);
+  const a    = document.createElement('a');
+  a.href = url; a.download = `code_scanner_report_${new Date().toISOString().slice(0,10)}.csv`;
+  a.click(); URL.revokeObjectURL(url);
+}
+
+
+
+/* ─── Smart Audit Hub Logic ──────────────────────────── */
+let auditAllData = [];
+
+async function loadAuditLogs() {
+  const btn = document.querySelector('#view-audit .btn-primary');
+  if(btn) {
+    btn.innerHTML = 'Refreshing...';
+    btn.disabled = true;
+  }
+
+  const eligible = document.getElementById('audit-filter-eligible').value;
+  const category = document.getElementById('audit-filter-category').value;
+  const search = document.getElementById('audit-search').value;
+
+  try {
+    const url = new URL('/api/audit/logs', window.location.origin);
+    if(eligible) url.searchParams.append('exportEligible', eligible);
+    if(category) url.searchParams.append('category', category);
+    if(search) url.searchParams.append('search', search);
+
+    const res = await fetch(url.toString());
+    const json = await res.json();
+    if (!res.ok) throw new Error(json.message || 'Failed to fetch audit logs');
+    
+    auditAllData = json.logs || [];
+    renderAuditSummary(json.summary);
+    renderAuditTable(auditAllData);
+  } catch(err) {
+    alert('Error fetching Audit Logs: ' + err.message);
+  } finally {
+    if(btn) {
+      btn.disabled = false;
+      btn.innerHTML = `<svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><polyline points="1 4 1 10 7 10"/><path d="M3.51 15a9 9 0 102.13-9.36L1 10"/></svg> Refresh`;
+    }
+  }
+}
+
+function renderAuditSummary(summary) {
+  if(!summary) return;
+  document.getElementById('ac-total').innerText = summary.total || 0;
+  document.getElementById('ac-eligible').innerText = summary.exportEligible || 0;
+  document.getElementById('ac-failed').innerText = summary.notExported || 0;
+  
+  const reloans = (summary.byCategory?.COMPLETE_RELOAN || 0) + (summary.byCategory?.INCOMPLETE_RELOAN || 0);
+  const fresh = (summary.byCategory?.COMPLETE_FRESH_LOAN || 0) + (summary.byCategory?.INCOMPLETE_FRESH_LOAN || 0);
+  
+  document.getElementById('ac-reloan').innerText = reloans;
+  document.getElementById('ac-fresh').innerText = fresh;
+}
+
+function renderAuditTable(logs) {
+  const tbody = document.getElementById('audit-tbody');
+  tbody.innerHTML = '';
+  
+  if (!logs || logs.length === 0) {
+    tbody.innerHTML = `<tr><td colspan="11" style="text-align:center;padding:40px;color:var(--muted)">No audit logs found.</td></tr>`;
+    return;
+  }
+  
+  logs.forEach((log, index) => {
+    const issuesHtml = (log.issues || []).map(i => `<div style="color:#ef4444;font-size:11px;margin-bottom:2px;">• ${esc(i)}</div>`).join('');
+    const warningsHtml = (log.warnings || []).map(w => `<div style="color:#f59e0b;font-size:11px;margin-bottom:2px;">• ${esc(w)}</div>`).join('');
+    
+    const tr = document.createElement('tr');
+    tr.innerHTML = `
+      <td class="td-no">${index + 1}</td>
+      <td class="td-bold">${esc(log.customerName) || 'Unknown'}</td>
+      <td>${esc(log.phone) || '-'}</td>
+      <td><span class="badge ${log.category.includes('RELOAN') ? 'badge-COMPLETED' : 'badge-PENDING'}" style="font-size:10px;">${esc(log.category.replace(/_/g, ' '))}</span></td>
+      <td>${log.isProfileComplete ? '✅ Complete' : '⚠️ Incomplete'}</td>
+      <td>${log.panVerified ? '✅' : '❌'}</td>
+      <td>${log.aadhaarVerified ? '✅' : '❌'}</td>
+      <td>${log.exportEligible ? '<span class="badge badge-APPROVED">YES</span>' : '<span class="badge badge-REJECTED">NO</span>'}</td>
+      <td style="max-width:220px;white-space:normal;line-height:1.2;">
+         ${issuesHtml}
+         ${warningsHtml}
+         ${!issuesHtml && !warningsHtml ? '<span style="color:#10b981;font-size:11px;">Clean ✅</span>' : ''}
+      </td>
+      <td class="td-date">${new Date(log.timestamp).toLocaleString()}</td>
+      <td class="td-action">
+        <button class="btn-ghost" onclick="viewAuditDetails('${log.applicationId}')" style="padding:4px 8px;font-size:11px;">View</button>
+      </td>
+    `;
+    tbody.appendChild(tr);
+  });
+}
+
+function viewAuditDetails(appId) {
+  const log = auditAllData.find(l => l.applicationId === appId);
+  if(!log) return;
+  
+  document.getElementById('audit-modal-name').innerText = log.customerName || 'Unknown Applicant';
+  document.getElementById('audit-modal-meta').innerText = `App ID: ${log.applicationId} • ${new Date(log.timestamp).toLocaleString()}`;
+  document.getElementById('audit-modal-avatar').innerText = (log.customerName || 'U').charAt(0).toUpperCase();
+  
+  let detailsHtml = `
+    <div style="display:grid;grid-template-columns:1fr 1fr;gap:20px;margin-bottom:24px;">
+      <div style="background:var(--bg);padding:16px;border-radius:8px;border:1px solid var(--border2);">
+        <h4 style="font-size:12px;color:var(--muted);text-transform:uppercase;margin-bottom:12px;">Customer Details</h4>
+        <div style="font-size:13px;line-height:1.6;">
+          <div><strong>Phone:</strong> ${log.phone || '-'}</div>
+          <div><strong>PAN Status:</strong> ${log.panVerified ? 'Verified' : 'Unverified'}</div>
+          <div><strong>Aadhaar Status:</strong> ${log.aadhaarVerified ? 'Verified' : 'Unverified'}</div>
+          <div><strong>Profile Type:</strong> ${log.isProfileComplete ? 'Complete' : 'Incomplete'}</div>
+          <div><strong>Loan Category:</strong> ${log.category.replace(/_/g, ' ')}</div>
+        </div>
+      </div>
+      <div style="background:var(--bg);padding:16px;border-radius:8px;border:1px solid var(--border2);">
+        <h4 style="font-size:12px;color:var(--muted);text-transform:uppercase;margin-bottom:12px;">Export Status</h4>
+        <div style="font-size:13px;line-height:1.6;">
+          <div><strong>Eligible:</strong> ${log.exportEligible ? '<span style="color:#10b981;font-weight:700;">YES</span>' : '<span style="color:#ef4444;font-weight:700;">NO</span>'}</div>
+          <div style="margin-top:8px;"><strong>LOS Job Status:</strong> ${log.losJob?.status || 'N/A'}</div>
+          <div><strong>LOS Case #:</strong> ${log.losJob?.losCaseNumber || '-'}</div>
+          <div><strong>Retries:</strong> ${log.losJob?.retryCount || 0}</div>
+          ${log.losJob?.lastError ? `<div style="color:#ef4444;margin-top:4px;"><strong>Error:</strong> ${log.losJob.lastError}</div>` : ''}
+        </div>
+      </div>
+    </div>
+  `;
+  
+  if (log.correctness) {
+     detailsHtml += `
+       <div style="background:var(--bg);padding:16px;border-radius:8px;border:1px solid var(--border2);margin-bottom:24px;">
+         <h4 style="font-size:12px;color:var(--muted);text-transform:uppercase;margin-bottom:12px;">Smart Correctness Checks</h4>
+         <div style="display:grid;grid-template-columns:1fr 1fr;gap:12px;font-size:12px;">
+           <div><strong>PAN Format:</strong> ${log.correctness.panFormat?.status === 'PASS' ? '✅' : '❌'} ${esc(log.correctness.panFormat?.message)}</div>
+           <div><strong>Aadhaar Format:</strong> ${log.correctness.aadhaarFormat?.status === 'PASS' ? '✅' : '❌'} ${esc(log.correctness.aadhaarFormat?.message)}</div>
+           <div><strong>Mobile Format:</strong> ${log.correctness.mobileFormat?.status === 'PASS' ? '✅' : '❌'} ${esc(log.correctness.mobileFormat?.message)}</div>
+           <div><strong>Pin Code Format:</strong> ${log.correctness.postalCodeFormat?.status === 'PASS' ? '✅' : '❌'} ${esc(log.correctness.postalCodeFormat?.message)}</div>
+           <div style="grid-column:1 / -1;border-top:1px solid var(--border2);padding-top:8px;margin-top:4px;">
+             <strong>Placeholder Detection:</strong> ${log.correctness.placeholderDetection?.status === 'PASS' ? '✅ Clean' : `❌ <span style="color:#ef4444">${esc(log.correctness.placeholderDetection?.message)}</span>`}
+           </div>
+         </div>
+       </div>
+     `;
+  }
+
+  detailsHtml += `
+    <div style="background:var(--bg);padding:16px;border-radius:8px;border:1px solid var(--border2);">
+      <h4 style="font-size:12px;color:var(--muted);text-transform:uppercase;margin-bottom:12px;">Diagnostic Logs</h4>
+      <div style="font-size:13px;">
+        ${(log.issues || []).map(i => `<div style="color:#ef4444;padding:4px 0;border-bottom:1px solid var(--border);"><strong style="display:inline-block;width:60px;">BLOCKER</strong> ${esc(i)}</div>`).join('')}
+        ${(log.warnings || []).map(w => `<div style="color:#f59e0b;padding:4px 0;border-bottom:1px solid var(--border);"><strong style="display:inline-block;width:60px;">WARNING</strong> ${esc(w)}</div>`).join('')}
+        ${(!log.issues?.length && !log.warnings?.length) ? '<div style="color:#10b981;">No issues found. Application is fully valid.</div>' : ''}
+      </div>
+    </div>
+  `;
+
+  document.getElementById('audit-modal-body').innerHTML = detailsHtml;
+  document.getElementById('audit-detail-modal').classList.remove('hidden');
+}
+
+function closeAuditModal(e) {
+  if (e.target.id === 'audit-detail-modal') {
+    document.getElementById('audit-detail-modal').classList.add('hidden');
+  }
+}
+
+async function triggerBulkAudit() {
+  if(!confirm('Re-audit all applications from the last 30 days? This will run in the background.')) return;
+  try {
+    const res = await fetch('/api/audit/run-all', { method: 'POST' });
+    const json = await res.json();
+    alert(json.message);
+    loadAuditLogs();
+  } catch(err) {
+    alert('Error triggering bulk audit: ' + err.message);
+  }
+}
+
+/* ─── Hardcode Scanner Logic ──────────────────────────── */
+async function runHardcodeScan() {
+  const loader = document.getElementById('scan-loader');
+  const tableWrap = document.getElementById('scan-table-wrap');
+  const emptyState = document.getElementById('scan-empty');
+  const summaryRow = document.getElementById('scan-summary-row');
+  const tbody = document.getElementById('scan-tbody');
+  const btn = document.getElementById('scan-btn');
+
+  btn.disabled = true;
+  loader.classList.remove('hidden');
+  tableWrap.style.display = 'none';
+  emptyState.style.display = 'none';
+  summaryRow.style.display = 'none';
+
+  try {
+    const res = await fetch('/api/audit/scan');
+    const json = await res.json();
+    
+    if(!json.success) throw new Error(json.message || 'Scan failed');
+    
+    const findings = json.findings || [];
+    window._scanFindings = findings;
+    
+    if(findings.length === 0) {
+      emptyState.style.display = 'block';
+    } else {
+      renderScanTable(findings);
+      
+      const counts = { CRITICAL: 0, HIGH: 0, MEDIUM: 0, LOW: 0 };
+      findings.forEach(f => counts[f.severity]++);
+      
+      document.getElementById('sc-critical').innerText = counts.CRITICAL;
+      document.getElementById('sc-high').innerText = counts.HIGH;
+      document.getElementById('sc-medium').innerText = counts.MEDIUM;
+      document.getElementById('sc-low').innerText = counts.LOW;
+      document.getElementById('sc-total').innerText = findings.length;
+      
+      summaryRow.style.display = 'flex';
+      tableWrap.style.display = 'block';
+      document.getElementById('scan-export-btn').style.display = 'inline-flex';
+    }
+  } catch(err) {
+    alert('Error running scan: ' + err.message);
+  } finally {
+    loader.classList.add('hidden');
+    btn.disabled = false;
+  }
+}
+
+function renderScanTable(findings) {
+  const tbody = document.getElementById('scan-tbody');
+  tbody.innerHTML = '';
+  
+  findings.forEach((f, index) => {
+    const sevColor = f.severity === 'CRITICAL' ? '#ef4444' : f.severity === 'HIGH' ? '#f97316' : f.severity === 'MEDIUM' ? '#eab308' : '#6366f1';
+    
+    const tr = document.createElement('tr');
+    tr.innerHTML = `
+      <td class="td-no">${index + 1}</td>
+      <td><span class="badge" style="background:${sevColor}22;color:${sevColor};border:1px solid ${sevColor}44;">${f.severity}</span></td>
+      <td class="td-bold">${esc(f.label)}</td>
+      <td style="font-size:11px;word-break:break-all;max-width:250px;">${esc(f.file.split('LoanInNeedServer2')[1] || f.file)}</td>
+      <td style="font-family:monospace;color:var(--teal);">L${f.line}</td>
+      <td style="font-family:monospace;font-size:11px;white-space:pre-wrap;background:rgba(0,0,0,0.2);padding:8px;border-radius:4px;word-break:break-all;">${esc(f.code)}</td>
+    `;
+    tbody.appendChild(tr);
+  });
+}
+
+function filterScanTable() {
+  const search = document.getElementById('scan-search').value.toLowerCase();
+  const severity = document.getElementById('scan-severity-filter').value;
+  const findings = window._scanFindings || [];
+  
+  const filtered = findings.filter(f => {
+    const matchesSearch = f.label.toLowerCase().includes(search) || f.file.toLowerCase().includes(search) || f.code.toLowerCase().includes(search);
+    const matchesSev = severity ? f.severity === severity : true;
+    return matchesSearch && matchesSev;
+  });
+  
+  renderScanTable(filtered);
+}
+
+function exportScanReport() {
+  const findings = window._scanFindings || [];
+  if(findings.length === 0) return;
+  const header = ['Severity', 'Issue', 'File', 'Line', 'Code Snippet'].join(',');
+  const rows = findings.map(f => [
+    f.severity,
+    `"${esc(f.label)}"`,
+    `"${esc(f.file)}"`,
+    f.line,
+    `"${esc(f.code).replace(/"/g, '""')}"`
+  ].join(','));
+  const csv = [header, ...rows].join('\n');
+  const blob = new Blob([csv], { type: 'text/csv' });
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement('a');
+  a.href = url;
+  a.download = `hardcode_scan_report_${new Date().toISOString().slice(0,10)}.csv`;
+  a.click();
 }
