@@ -1485,9 +1485,9 @@ function closeAuditModal(e) {
 async function triggerBulkAudit() {
   if(!confirm('Re-audit all applications from the last 30 days? This will run in the background.')) return;
   try {
-    const res = await fetch('/api/audit/run-all', { method: 'POST' });
+    const res = await fetch('/api/audit/bulk', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({}) });
     const json = await res.json();
-    alert(json.message);
+    alert(json.message || 'Bulk audit initiated successfully');
     loadAuditLogs();
   } catch(err) {
     alert('Error triggering bulk audit: ' + err.message);
